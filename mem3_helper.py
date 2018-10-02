@@ -35,20 +35,47 @@ def discover_peers(service_record):
     requests.exceptions.ConnectionError,
     max_tries=10
 )
-def connect_the_dots(names):
+
+def request(verb='get', uri='', doc='{}'):
     creds = (os.getenv("COUCHDB_USER"), os.getenv("COUCHDB_PASSWORD"))
+    if verb=='put':
+        if creds[0] and creds[1]:
+            return requests.put(uri, data=json.dumps(doc), auth=creds)
+        else:
+            return requests.put(uri, data=json.dumps(doc))
+    else:
+        if creds[0] and creds[1]:
+            return requests.get(uri, data=json.dumps(doc), auth=creds)
+        else:
+            return requests.get(uri, data=json.dumps(doc))
+
+def connect_the_dots(names):
+    print('Connecting the dots')
     for name in names:
         uri = "http://127.0.0.1:5986/_nodes/couchdb@{0}".format(name)
         doc = {}
-        if creds[0] and creds[1]:
-            resp = requests.put(uri, data=json.dumps(doc), auth=creds)
-        else:
-            resp = requests.put(uri, data=json.dumps(doc))
+        resp = request(verb='put', uri=uri, doc=doc)
         while resp.status_code == 404:
             print('Waiting for _nodes DB to be created ...')
             time.sleep(5)
-            resp = requests.put(uri, data=json.dumps(doc))
+            resp = request(verb='put', uri=uri, doc=doc)
         print('Adding cluster member', name, resp.status_code)
+
+def create_initial_databases():
+    print('Creeating initial databases')
+    ADMIN_DBS = ('_dbs', '_users', '_replicator')
+    uri = "http://127.0.0.1:5986/_all_dbs"
+    # get all dbs
+    existing_dbs = request(verb='get', uri=uri).json()
+    # create dbs left
+    dbs = [ d for d in ADMIN_DBS if not d in existing_dbs ]
+    for dbname in dbs:
+        uri = "http://127.0.0.1:5986/{0}".format(dbname)
+        resp = request(verb='put', uri=uri)
+        while resp.status_code == 404:
+            print("Waiting for {0} DB to be created ...".format(dbname))
+            time.sleep(1)
+            resp = request(verb='put', uri=uri)
 
 def sleep_forever():
     while True:
@@ -57,4 +84,5 @@ def sleep_forever():
 if __name__ == '__main__':
     connect_the_dots(discover_peers(construct_service_record()))
     print('Cluster membership populated!')
+    create_initial_databases()
     sleep_forever()
